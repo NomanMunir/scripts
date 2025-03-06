@@ -6,7 +6,7 @@ This script automates the installation of essential development tools on a fresh
 ## 📌 How to Run the Script
 
 Run the following command in your terminal to execute the setup script directly from GitHub:
-
+```
 ```bash
 bash <(curl -sL https://raw.githubusercontent.com/NomanMunir/scripts/main/setup-dev.sh)
 ```

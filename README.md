@@ -1,21 +1,35 @@
 # Developer Setup Script v3.0
 
-This script automates the installation of essential development tools on a fresh **Debian/Ubuntu** system with a completely modular architecture, enhanced user experience, and comprehensive tool coverage.
+This script automates the installation of essential development tools on **Linux (Debian/Ubuntu)** and **Windows** systems with a completely modular architecture, enhanced user experience, and comprehensive tool coverage.
+
+## 🖥️ Platform Support
+
+- **🐧 Linux**: Debian/Ubuntu systems with apt package manager
+- **🪟 Windows**: Windows 10/11 with winget, Chocolatey, and Scoop support
 
 ## ✨ New Features in v3.0
 
+- **🎯 Interactive Software Selection**: Modern checkbox-style CLI interface for selecting individual software packages (Linux & Windows)
+- **Cross-Platform Support**: Works on Linux (Debian/Ubuntu) and Windows (10/11)
+- **Multiple Package Managers**: Linux (apt, snap) and Windows (winget, Chocolatey, Scoop)
+- **Latest Technologies**: Includes cutting-edge development tools (.NET 8, Python 3.12, Node.js LTS, etc.)
 - **Modular Architecture**: Organized into separate modules for different tool categories
-- **Comprehensive Tool Coverage**: 12 specialized modules covering all developer needs
+- **Comprehensive Tool Coverage**: 12+ specialized modules covering all developer needs
 - **Professional User Interface**: Progress bars, colored output, and clear status messages
 - **Enhanced Error Handling**: Comprehensive logging and failure tracking
 - **Improved Security**: Safe SSH configuration with backup and validation
 - **Better User Experience**: Interactive module selection and intelligent configuration
 - **Complete Graphics Suite**: Full design and graphics tools support
-- **Comprehensive Logging**: Detailed logs saved to `/var/log/dev-setup-*.log`
+- **Comprehensive Logging**: Detailed logs saved to system temp directories
 - **Installation Summary**: Complete report with timing and failure tracking
 - **Safety Features**: Configuration backups and rollback capabilities
+- **Category-based Filtering**: Filter software by categories (development, browsers, databases, etc.)
+- **Bulk Operations**: Select all or none with single keypress
+- **Vim-style Navigation**: Use j/k or arrow keys for navigation
 
 ## 📌 How to Run the Script
+
+### 🐧 Linux (Debian/Ubuntu)
 
 Run the following command in your terminal to execute the setup script:
 
@@ -33,7 +47,46 @@ chmod +x setup-dev.sh
 sudo ./setup-dev.sh
 ```
 
-## 🏗️ Modular Architecture
+### 🪟 Windows (10/11)
+
+1. **Download or clone** the repository
+2. **Navigate** to the `windows` folder
+3. **Right-click** on `setup-dev.bat` and select "Run as administrator"
+
+Or run manually:
+
+```cmd
+git clone https://github.com/NomanMunir/scripts.git
+cd scripts\windows
+# Right-click setup-dev.bat -> Run as administrator
+```
+
+## 🏗️ Installation Methods
+
+### 🎯 Interactive Software Selection (Recommended)
+
+The new interactive interface provides a modern, checkbox-style CLI for selecting individual software packages:
+
+**Features:**
+
+- Checkbox-style interface with visual indicators
+- Category-based filtering (development, browsers, databases, etc.)
+- Vim-style navigation (j/k) and arrow keys
+- Bulk operations (select all/none)
+- Real-time selection counter
+- Individual software descriptions
+
+**Navigation:**
+
+- `↑/↓` or `j/k`: Navigate through software list
+- `Space`: Toggle selection (✓/✗)
+- `Enter`: Confirm selections and proceed
+- `a`: Select all visible items
+- `n`: Deselect all items
+- `c`: Filter by category
+- `q`: Quit selection
+
+### 📦 Traditional Module-based Installation
 
 The script is organized into the following modules:
 
@@ -98,6 +151,59 @@ The script is organized into the following modules:
 
 Each module can be selected independently, allowing you to install only what you need.
 
+### 🎯 Interactive Mode Software Catalog
+
+When using the interactive selection, you can choose from the following software packages:
+
+**Development Tools:**
+
+- Git Version Control
+- Visual Studio Code
+- Docker & Docker Compose
+- Node.js & NPM
+- Python Development Environment
+- Rust Programming Language
+- Go Programming Language
+- Java Development Kit
+
+**Web Browsers:**
+
+- Google Chrome
+- Mozilla Firefox
+- Microsoft Edge
+
+**Database Systems:**
+
+- MySQL/MariaDB
+- PostgreSQL
+- MongoDB
+- Redis
+
+**Multimedia Tools:**
+
+- VLC Media Player
+- GIMP (GNU Image Manipulation Program)
+- OBS Studio
+
+**Communication Tools:**
+
+- Slack
+- Discord
+- Microsoft Teams
+
+**System Utilities:**
+
+- htop (Interactive process viewer)
+- Neofetch (System information display)
+- tmux (Terminal multiplexer)
+- Zsh + Oh My Zsh (Enhanced shell)
+
+**Security Tools:**
+
+- UFW Firewall
+- Fail2Ban (Intrusion prevention)
+- SSH Server (with hardening)
+
 ### Shell & Productivity
 
 - **Enhanced Shell**: `zsh` with `Oh My Zsh` framework
@@ -143,7 +249,16 @@ Each module can be selected independently, allowing you to install only what you
 
 ## 📊 Installation Process
 
-The script follows this structured approach:
+### Interactive Mode (Recommended)
+
+1. **System Verification**: Check compatibility and privileges
+2. **User Setup**: Detect or create non-root user
+3. **Interactive Selection**: Use the checkbox interface to select software
+4. **Installation**: Install selected software with progress tracking
+5. **Configuration**: Apply security hardening and optimization
+6. **Summary**: Provide detailed installation report and recommendations
+
+### Traditional Module Mode
 
 1. **System Verification**: Check compatibility and privileges
 2. **User Setup**: Detect or create non-root user
@@ -204,3 +319,13 @@ If you encounter issues:
 ## 📄 License
 
 MIT License - Feel free to modify and distribute
+
+## 🎯 Try the Interactive Demo
+
+Want to see the new interactive features in action? Run the demo:
+
+```bash
+./demo-interactive.sh
+```
+
+This will show you all the new features and how to use the interactive selection interface.

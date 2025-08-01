@@ -477,3 +477,53 @@ restore_file() {
         return 1
     fi
 }
+
+# Backup SSH configuration before making changes
+backup_ssh_config() {
+    if [ -f /etc/ssh/sshd_config ]; then
+        mkdir -p "$BACKUP_DIR"
+        cp /etc/ssh/sshd_config "$BACKUP_DIR/sshd_config.backup"
+        print_info "SSH configuration backed up to $BACKUP_DIR"
+    fi
+}
+
+# Safe SSH configuration with validation
+configure_ssh_safely() {
+    backup_ssh_config
+    
+    local config_file="/etc/ssh/sshd_config"
+    local temp_config="/tmp/sshd_config.tmp"
+    
+    cp "$config_file" "$temp_config"
+    
+    # Apply SSH hardening
+    sed -i 's/#Port 22/Port 22/' "$temp_config"
+    sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin no/' "$temp_config"
+    sed -i 's/PermitRootLogin yes/PermitRootLogin no/' "$temp_config"
+    
+    # Only disable password auth if SSH keys exist for the user
+    if [ -n "$CURRENT_USER" ] && [ -d "/home/$CURRENT_USER/.ssh" ] && [ -f "/home/$CURRENT_USER/.ssh/authorized_keys" ]; then
+        sed -i 's/#PasswordAuthentication yes/PasswordAuthentication no/' "$temp_config"
+        sed -i 's/PasswordAuthentication yes/PasswordAuthentication no/' "$temp_config"
+        print_info "Password authentication disabled (SSH keys detected)"
+    else
+        print_warning "SSH keys not found. Keeping password authentication enabled for safety."
+        print_info "To set up SSH keys later, run: ssh-keygen -t ed25519"
+    fi
+    
+    # Add LogLevel if not present
+    if ! grep -q "^LogLevel" "$temp_config"; then
+        echo "LogLevel VERBOSE" >> "$temp_config"
+    fi
+    
+    # Test SSH configuration
+    if sshd -t -f "$temp_config" 2>/dev/null; then
+        mv "$temp_config" "$config_file"
+        print_success "SSH configuration updated successfully"
+        return 0
+    else
+        print_error "SSH configuration test failed. Keeping original configuration."
+        rm -f "$temp_config"
+        return 1
+    fi
+}

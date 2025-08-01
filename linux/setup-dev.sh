@@ -25,6 +25,7 @@ readonly YELLOW="\e[33m"
 readonly BLUE="\e[34m"
 readonly PURPLE="\e[35m"
 readonly BOLD="\e[1m"
+readonly DIM="\e[2m"
 readonly RESET="\e[0m"
 
 # Global variables
@@ -37,6 +38,7 @@ SELECTED_MODULES=()
 
 # Available modules
 declare -A MODULES=(
+    ["interactive"]="🎯 Interactive Software Selection"
     ["core"]="Core System Components"
     ["security"]="Security & Networking Tools"
     ["development"]="Development Tools & Languages"
@@ -70,15 +72,23 @@ show_modules_menu() {
     
     echo -e "${BOLD}${BLUE}Select modules to install (you can choose multiple):${RESET}\n"
     
+    # Highlight the interactive module
+    echo -e "${CYAN}[🎯]${RESET} ${BOLD}${GREEN}interactive${RESET} - ${MODULES["interactive"]} ${YELLOW}(RECOMMENDED)${RESET}"
+    echo -e "    ${DIM}Modern checkbox-style interface for selecting individual software${RESET}\n"
+    
     local i=1
     for module in "${!MODULES[@]}"; do
-        echo -e "${CYAN}[$i]${RESET} ${BOLD}${module}${RESET} - ${MODULES[$module]}"
-        ((i++))
+        if [[ "$module" != "interactive" ]]; then
+            echo -e "${CYAN}[$i]${RESET} ${BOLD}${module}${RESET} - ${MODULES[$module]}"
+            ((i++))
+        fi
     done
     
-    echo -e "\n${CYAN}[A]${RESET} ${BOLD}Install All Modules${RESET}"
-    echo -e "${CYAN}[C]${RESET} ${BOLD}Custom Selection${RESET}"
+    echo -e "\n${CYAN}[A]${RESET} ${BOLD}Install All Modules${RESET} (Traditional method)"
+    echo -e "${CYAN}[C]${RESET} ${BOLD}Custom Selection${RESET} (Traditional method)"
     echo -e "${CYAN}[Q]${RESET} ${BOLD}Quit${RESET}"
+    echo
+    echo -e "${YELLOW}💡 TIP: Try the Interactive Selection for the best experience!${RESET}"
 }
 
 # Get user module selection
@@ -86,12 +96,18 @@ select_modules() {
     while true; do
         show_modules_menu
         echo
-        read -p "Enter your choice [1-${#MODULES[@]}/A/C/Q]: " choice
+        read -p "Enter your choice [🎯/1-${#MODULES[@]}/A/C/Q]: " choice
         
         case "${choice^^}" in
+            "🎯"|"INTERACTIVE"|"I")
+                SELECTED_MODULES=("interactive")
+                print_success "Interactive Software Selection chosen - launching interface..."
+                break
+                ;;
             A)
-                SELECTED_MODULES=($(printf '%s\n' "${!MODULES[@]}" | sort))
-                print_success "All modules selected for installation"
+                # Exclude interactive module from "all" selection
+                SELECTED_MODULES=($(printf '%s\n' "${!MODULES[@]}" | grep -v "interactive" | sort))
+                print_success "All traditional modules selected for installation"
                 break
                 ;;
             C)
@@ -103,14 +119,16 @@ select_modules() {
                 exit 0
                 ;;
             [1-9]*)
-                if [[ $choice -ge 1 && $choice -le ${#MODULES[@]} ]]; then
-                    local module_array=($(printf '%s\n' "${!MODULES[@]}" | sort))
-                    local selected_module="${module_array[$((choice-1))]}"
+                # Adjust for interactive module being first
+                local adjusted_choice=$((choice))
+                local module_array=($(printf '%s\n' "${!MODULES[@]}" | grep -v "interactive" | sort))
+                if [[ $adjusted_choice -ge 1 && $adjusted_choice -le ${#module_array[@]} ]]; then
+                    local selected_module="${module_array[$((adjusted_choice-1))]}"
                     SELECTED_MODULES=("$selected_module")
                     print_success "Selected module: ${MODULES[$selected_module]}"
                     break
                 else
-                    print_error "Invalid selection. Please choose a number between 1 and ${#MODULES[@]}"
+                    print_error "Invalid selection. Please choose a number between 1 and ${#module_array[@]}"
                 fi
                 ;;
             *)
@@ -129,7 +147,8 @@ select_custom_modules() {
     echo -e "${CYAN}Or enter module names separated by spaces (e.g., core development utils)${RESET}\n"
     
     local i=1
-    for module in $(printf '%s\n' "${!MODULES[@]}" | sort); do
+    # Exclude interactive module from traditional selection
+    for module in $(printf '%s\n' "${!MODULES[@]}" | grep -v "interactive" | sort); do
         echo -e "${CYAN}[$i]${RESET} ${BOLD}$module${RESET} - ${MODULES[$module]}"
         ((i++))
     done
@@ -138,11 +157,11 @@ select_custom_modules() {
     read -p "Enter your selection: " selections
     
     # Parse selections (numbers or names)
+    local module_array=($(printf '%s\n' "${!MODULES[@]}" | grep -v "interactive" | sort))
     for selection in $selections; do
         if [[ "$selection" =~ ^[0-9]+$ ]]; then
             # Numeric selection
-            if [[ $selection -ge 1 && $selection -le ${#MODULES[@]} ]]; then
-                local module_array=($(printf '%s\n' "${!MODULES[@]}" | sort))
+            if [[ $selection -ge 1 && $selection -le ${#module_array[@]} ]]; then
                 local selected_module="${module_array[$((selection-1))]}"
                 if [[ ! " ${temp_selection[@]} " =~ " ${selected_module} " ]]; then
                     temp_selection+=("$selected_module")
@@ -152,7 +171,7 @@ select_custom_modules() {
             fi
         else
             # Name selection
-            if [[ -n "${MODULES[$selection]:-}" ]]; then
+            if [[ -n "${MODULES[$selection]:-}" && "$selection" != "interactive" ]]; then
                 if [[ ! " ${temp_selection[@]} " =~ " ${selection} " ]]; then
                     temp_selection+=("$selection")
                 fi
@@ -185,6 +204,34 @@ select_custom_modules() {
 # Load and execute a module
 load_module() {
     local module="$1"
+    
+    # Special handling for interactive module
+    if [[ "$module" == "interactive" ]]; then
+        # Load the interactive module
+        local interactive_file="$MODULES_DIR/interactive.sh"
+        if [[ ! -f "$interactive_file" ]]; then
+            print_error "Interactive module file not found: $interactive_file"
+            FAILED_INSTALLATIONS+=("$module")
+            return 1
+        fi
+        
+        source "$interactive_file"
+        
+        print_header "🎯 Interactive Software Selection"
+        
+        # Run the interactive selection
+        if interactive_software_selection; then
+            print_success "Software selected, starting installation..."
+            install_selected_software
+        else
+            print_warning "No software selected or operation cancelled"
+            return 1
+        fi
+        
+        return 0
+    fi
+    
+    # Standard module loading
     local module_file="$MODULES_DIR/$module.sh"
     
     if [[ ! -f "$module_file" ]]; then

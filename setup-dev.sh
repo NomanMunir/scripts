@@ -1,174 +1,648 @@
 #!/bin/bash
 
-# Check if running as root
-if [ "$(id -u)" -ne 0 ]; then
-    echo "This script must be run as root. Please switch to root (or use sudo if available)."
-    exit 1
-fi
+#==============================================================================
+# Developer Environment Setup Script for Debian/Ubuntu
+# Version: 2.0
+# Description: Automated installation of development tools and security hardening
+# Author: Professional Setup Script
+# License: MIT
+#==============================================================================
+
+set -euo pipefail  # Exit on error, undefined vars, pipe failures
+
+# Configuration
+readonly SCRIPT_NAME="$(basename "$0")"
+readonly LOG_FILE="/var/log/dev-setup-$(date +%Y%m%d-%H%M%S).log"
+readonly BACKUP_DIR="/root/ssh-backup-$(date +%Y%m%d-%H%M%S)"
 
 # Colors for output
-GREEN="\e[32m"
-CYAN="\e[36m"
-RED="\e[31m"
-RESET="\e[0m"
+readonly GREEN="\e[32m"
+readonly CYAN="\e[36m"
+readonly RED="\e[31m"
+readonly YELLOW="\e[33m"
+readonly BLUE="\e[34m"
+readonly BOLD="\e[1m"
+readonly RESET="\e[0m"
 
-# Function to prompt user for confirmation
-confirm_install() {
-    read -p "Do you want to install $1? (y/n): " choice
-    case "$choice" in
-        y|Y ) return 0 ;;
-        * ) return 1 ;;
-    esac
+# Global variables
+CURRENT_USER=""
+INSTALLATION_COUNT=0
+FAILED_INSTALLATIONS=()
+START_TIME=$(date +%s)
+
+#==============================================================================
+# Utility Functions
+#==============================================================================
+
+# Logging function
+log() {
+    local level="$1"
+    shift
+    local message="$*"
+    local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    echo "[$timestamp] [$level] $message" | tee -a "$LOG_FILE"
 }
 
-# --- Step 1: Basic System Setup ---
+# Print formatted messages
+print_header() {
+    echo -e "\n${BOLD}${BLUE}================================${RESET}"
+    echo -e "${BOLD}${BLUE} $1${RESET}"
+    echo -e "${BOLD}${BLUE}================================${RESET}\n"
+}
 
-echo -e "${GREEN}Updating and upgrading system...${RESET}"
-apt update && apt upgrade -y
+print_success() {
+    echo -e "${GREEN}✓ $1${RESET}"
+    log "SUCCESS" "$1"
+}
 
-# Install sudo if not installed (on minimal systems sudo may be missing)
-if ! command -v sudo &>/dev/null; then
-    echo -e "${CYAN}sudo not found, installing sudo...${RESET}"
-    apt install -y sudo
-fi
+print_error() {
+    echo -e "${RED}✗ $1${RESET}"
+    log "ERROR" "$1"
+}
 
-# --- Step 2: Create a New User and Add to sudo Group ---
-if confirm_install "Create a new user"; then
-    read -p "Enter the username for the new user: " newuser
-    if id "$newuser" &>/dev/null; then
-        echo -e "${RED}User '$newuser' already exists. Skipping user creation.${RESET}"
+print_warning() {
+    echo -e "${YELLOW}⚠ $1${RESET}"
+    log "WARNING" "$1"
+}
+
+print_info() {
+    echo -e "${CYAN}ℹ $1${RESET}"
+    log "INFO" "$1"
+}
+
+# Check if running as root
+check_root() {
+    if [ "$(id -u)" -ne 0 ]; then
+        print_error "This script must be run as root"
+        echo "Please run: sudo $SCRIPT_NAME"
+        exit 1
+    fi
+}
+
+# Check system compatibility
+check_system() {
+    if ! command -v apt &>/dev/null; then
+        print_error "This script requires a Debian/Ubuntu system with apt package manager"
+        exit 1
+    fi
+    
+    print_success "System compatibility verified"
+}
+
+# Enhanced confirmation function with better UX
+confirm_install() {
+    local component="$1"
+    local description="$2"
+    
+    echo -e "\n${BOLD}Install: ${component}${RESET}"
+    if [ -n "$description" ]; then
+        echo -e "${CYAN}Description: $description${RESET}"
+    fi
+    
+    while true; do
+        read -p "Do you want to install this component? [Y/n]: " choice
+        case "$choice" in
+            [Yy]* | "" ) return 0 ;;
+            [Nn]* ) return 1 ;;
+            * ) echo "Please answer yes (y) or no (n)." ;;
+        esac
+    done
+}
+
+# Safe package installation with error handling
+install_packages() {
+    local packages=("$@")
+    local failed_packages=()
+    
+    for package in "${packages[@]}"; do
+        print_info "Installing $package..."
+        if apt install -y "$package" >> "$LOG_FILE" 2>&1; then
+            print_success "$package installed successfully"
+        else
+            print_error "Failed to install $package"
+            failed_packages+=("$package")
+        fi
+    done
+    
+    if [ ${#failed_packages[@]} -gt 0 ]; then
+        FAILED_INSTALLATIONS+=("${failed_packages[@]}")
+        return 1
+    fi
+    return 0
+}
+
+# Get or create user
+setup_user() {
+    local username=""
+    
+    # Check if there's already a non-root user
+    local existing_user=$(getent passwd | awk -F: '$3 >= 1000 && $3 < 60000 {print $1}' | head -n1)
+    
+    if [ -n "$existing_user" ]; then
+        echo -e "\n${CYAN}Found existing user: $existing_user${RESET}"
+        if confirm_install "Use existing user ($existing_user)" "Use the existing non-root user for configuration"; then
+            CURRENT_USER="$existing_user"
+            return 0
+        fi
+    fi
+    
+    if confirm_install "Create new user" "Create a new non-root user with sudo privileges"; then
+        while true; do
+            read -p "Enter username for the new user: " username
+            if [ -n "$username" ] && [[ "$username" =~ ^[a-z_][a-z0-9_-]*$ ]]; then
+                break
+            else
+                print_error "Invalid username. Use lowercase letters, numbers, underscore, and hyphen only."
+            fi
+        done
+        
+        if id "$username" &>/dev/null; then
+            print_warning "User '$username' already exists"
+            CURRENT_USER="$username"
+        else
+            print_info "Creating user '$username'..."
+            useradd -m -s /bin/bash "$username"
+            echo "Please set a password for $username:"
+            passwd "$username"
+            usermod -aG sudo "$username"
+            print_success "User '$username' created and added to sudo group"
+            CURRENT_USER="$username"
+        fi
+    fi
+}
+
+# Backup SSH configuration before making changes
+backup_ssh_config() {
+    if [ -f /etc/ssh/sshd_config ]; then
+        mkdir -p "$BACKUP_DIR"
+        cp /etc/ssh/sshd_config "$BACKUP_DIR/sshd_config.backup"
+        print_info "SSH configuration backed up to $BACKUP_DIR"
+    fi
+}
+
+# Safe SSH configuration with validation
+configure_ssh_safely() {
+    backup_ssh_config
+    
+    local config_file="/etc/ssh/sshd_config"
+    local temp_config="/tmp/sshd_config.tmp"
+    
+    cp "$config_file" "$temp_config"
+    
+    # Apply SSH hardening
+    sed -i 's/#Port 22/Port 22/' "$temp_config"
+    sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin no/' "$temp_config"
+    sed -i 's/PermitRootLogin yes/PermitRootLogin no/' "$temp_config"
+    
+    # Only disable password auth if SSH keys exist for the user
+    if [ -n "$CURRENT_USER" ] && [ -d "/home/$CURRENT_USER/.ssh" ] && [ -f "/home/$CURRENT_USER/.ssh/authorized_keys" ]; then
+        sed -i 's/#PasswordAuthentication yes/PasswordAuthentication no/' "$temp_config"
+        sed -i 's/PasswordAuthentication yes/PasswordAuthentication no/' "$temp_config"
+        print_info "Password authentication disabled (SSH keys detected)"
     else
-        echo -e "${CYAN}Creating user '$newuser'...${RESET}"
-        useradd -m -s /bin/bash "$newuser"
-        echo "Please set a password for $newuser:"
-        passwd "$newuser"
-        echo -e "${CYAN}Adding user '$newuser' to the sudo group...${RESET}"
-        usermod -aG sudo "$newuser"
+        print_warning "SSH keys not found. Keeping password authentication enabled for safety."
+        print_info "To set up SSH keys later, run: ssh-keygen -t ed25519"
     fi
-fi
-
-# --- Step 3: Install Essential Tools ---
-if confirm_install "Essential System Utilities (curl, wget, git, zip, unzip, build-essential)"; then
-    echo -e "${CYAN}Installing essential system utilities...${RESET}"
-    apt install -y curl wget git zip unzip build-essential
-fi
-
-# --- Step 4: Networking & Security Tools ---
-if confirm_install "Networking & Security Tools (net-tools, iputils-ping, ufw, fail2ban)"; then
-    echo -e "${CYAN}Installing networking & security tools...${RESET}"
-    apt install -y net-tools iputils-ping ufw fail2ban
-fi
-
-# --- Step 5: SSH Server Configuration ---
-if confirm_install "SSH Server Setup & Hardening (openssh-server)"; then
-    echo -e "${CYAN}Installing and configuring SSH server...${RESET}"
-    apt install -y openssh-server
-    systemctl enable ssh
-    systemctl start ssh
-
-    echo -e "${CYAN}Hardening SSH settings...${RESET}"
-    # Ensure SSH is set to use port 22 (or modify as needed)
-    sed -i 's/#Port 22/Port 22/' /etc/ssh/sshd_config
-    # Disable root login and password authentication for better security
-    sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin no/' /etc/ssh/sshd_config
-    sed -i 's/#PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config
-    # --- Additional Logging Configuration for SSH ---
-    if ! grep -q "^LogLevel" /etc/ssh/sshd_config; then
-        echo "LogLevel VERBOSE" >> /etc/ssh/sshd_config
-        systemctl restart ssh
+    
+    # Add LogLevel if not present
+    if ! grep -q "^LogLevel" "$temp_config"; then
+        echo "LogLevel VERBOSE" >> "$temp_config"
     fi
-    systemctl restart ssh
-fi
+    
+    # Test SSH configuration
+    if sshd -t -f "$temp_config" 2>/dev/null; then
+        mv "$temp_config" "$config_file"
+        print_success "SSH configuration updated successfully"
+        return 0
+    else
+        print_error "SSH configuration test failed. Keeping original configuration."
+        rm -f "$temp_config"
+        return 1
+    fi
+}
 
-# --- Step 6: UFW Firewall Setup ---
-if confirm_install "UFW Firewall Setup (allow SSH, HTTP, HTTPS)"; then
-    echo -e "${CYAN}Configuring UFW firewall...${RESET}"
-    ufw allow 22/tcp   # SSH
-    ufw allow 80/tcp   # HTTP
-    ufw allow 443/tcp  # HTTPS
-    ufw --force enable
-    ufw status verbose
-fi
+# Progress tracking
+show_progress() {
+    local current="$1"
+    local total="$2"
+    local description="$3"
+    
+    local percentage=$((current * 100 / total))
+    local bar_length=50
+    local filled_length=$((percentage * bar_length / 100))
+    
+    printf "\r${CYAN}Progress: ["
+    printf "%*s" "$filled_length" | tr ' ' '='
+    printf "%*s" $((bar_length - filled_length)) | tr ' ' '-'
+    printf "] %d%% - %s${RESET}" "$percentage" "$description"
+    
+    if [ "$current" -eq "$total" ]; then
+        echo
+    fi
+}
 
-# --- Step 7: Docker Installation ---
-if confirm_install "Docker & Docker Compose"; then
-    echo -e "${CYAN}Installing Docker & Docker Compose...${RESET}"
-    apt install -y docker.io docker-compose
-    usermod -aG docker "$newuser"
-fi
+#==============================================================================
+# Main Installation Functions
+#==============================================================================
 
-# --- Step 8: Databases ---
-if confirm_install "Database Tools (SQLite, PostgreSQL, MariaDB)"; then
-    echo -e "${CYAN}Installing databases...${RESET}"
-    apt install -y sqlite3 postgresql postgresql-contrib mariadb-server
-fi
+# Initialize script
+initialize() {
+    print_header "Development Environment Setup Script v2.0"
+    
+    print_info "Starting setup process..."
+    print_info "Logs will be saved to: $LOG_FILE"
+    
+    check_root
+    check_system
+    
+    # Create log file
+    touch "$LOG_FILE"
+    log "INFO" "Script started by user: $(logname 2>/dev/null || echo 'root')"
+    log "INFO" "System: $(lsb_release -d 2>/dev/null | cut -f2 || echo 'Unknown')"
+}
 
-# --- Step 9: Development Tools ---
-if confirm_install "Development Tools (gcc, g++, clang, gdb, valgrind, Python, Node.js)"; then
-    echo -e "${CYAN}Installing development tools...${RESET}"
-    apt install -y gcc g++ clang gdb valgrind python3 python3-pip python3-venv nodejs npm
-fi
+# System update and basic setup
+update_system() {
+    ((INSTALLATION_COUNT++))
+    show_progress $INSTALLATION_COUNT 15 "Updating system packages"
+    
+    print_info "Updating package lists and upgrading system..."
+    if apt update >> "$LOG_FILE" 2>&1 && apt upgrade -y >> "$LOG_FILE" 2>&1; then
+        print_success "System updated successfully"
+    else
+        print_error "Failed to update system"
+        return 1
+    fi
+    
+    # Install sudo if not present
+    if ! command -v sudo &>/dev/null; then
+        print_info "Installing sudo..."
+        install_packages sudo
+    fi
+}
 
-# --- Step 10: Rust Installation ---
-if confirm_install "Rust Programming Language"; then
-    echo -e "${CYAN}Installing Rust...${RESET}"
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-fi
+# Essential system utilities
+install_essential_tools() {
+    if confirm_install "Essential System Utilities" "Basic tools: curl, wget, git, zip, unzip, build-essential, software-properties-common"; then
+        ((INSTALLATION_COUNT++))
+        show_progress $INSTALLATION_COUNT 15 "Installing essential tools"
+        
+        local packages=(curl wget git zip unzip build-essential software-properties-common apt-transport-https ca-certificates gnupg lsb-release)
+        install_packages "${packages[@]}"
+    fi
+}
 
-# --- Step 11: Zsh and Oh My Zsh ---
-if confirm_install "Zsh & Oh My Zsh with Powerline Fonts"; then
-    echo -e "${CYAN}Installing Zsh & Oh My Zsh...${RESET}"
-    apt install -y zsh fonts-powerline
-    sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" --unattended
-    chsh -s "$(which zsh)" "$newuser"
-fi
+# Networking and security tools
+install_networking_security() {
+    if confirm_install "Networking & Security Tools" "Tools: net-tools, iputils-ping, ufw, fail2ban, htop, neofetch"; then
+        ((INSTALLATION_COUNT++))
+        show_progress $INSTALLATION_COUNT 15 "Installing networking & security tools"
+        
+        local packages=(net-tools iputils-ping ufw fail2ban htop neofetch)
+        install_packages "${packages[@]}"
+    fi
+}
 
-# --- Step 12: Additional CLI Tools ---
-if confirm_install "Useful CLI Tools (tmux, bat, fzf, ripgrep, jq)"; then
-    echo -e "${CYAN}Installing additional CLI tools...${RESET}"
-    apt install -y tmux bat fzf ripgrep jq
-fi
+# SSH server setup with enhanced security
+setup_ssh_server() {
+    if confirm_install "SSH Server Setup & Hardening" "Install and configure OpenSSH server with security hardening"; then
+        ((INSTALLATION_COUNT++))
+        show_progress $INSTALLATION_COUNT 15 "Setting up SSH server"
+        
+        install_packages openssh-server
+        
+        print_info "Configuring SSH server..."
+        systemctl enable ssh >> "$LOG_FILE" 2>&1
+        systemctl start ssh >> "$LOG_FILE" 2>&1
+        
+        if configure_ssh_safely; then
+            if systemctl restart ssh >> "$LOG_FILE" 2>&1; then
+                print_success "SSH server configured and restarted successfully"
+            else
+                print_error "Failed to restart SSH service"
+                # Restore backup if restart fails
+                if [ -f "$BACKUP_DIR/sshd_config.backup" ]; then
+                    cp "$BACKUP_DIR/sshd_config.backup" /etc/ssh/sshd_config
+                    systemctl restart ssh
+                    print_info "SSH configuration restored from backup"
+                fi
+            fi
+        fi
+    fi
+}
 
-# --- Step 13: Web Server (Nginx) ---
-if confirm_install "Nginx Web Server"; then
-    echo -e "${CYAN}Installing Nginx...${RESET}"
-    apt install -y nginx
-    systemctl enable nginx
-    systemctl start nginx
-fi
+# UFW firewall configuration
+setup_firewall() {
+    if confirm_install "UFW Firewall Setup" "Configure firewall to allow SSH (22), HTTP (80), and HTTPS (443)"; then
+        ((INSTALLATION_COUNT++))
+        show_progress $INSTALLATION_COUNT 15 "Configuring firewall"
+        
+        print_info "Configuring UFW firewall..."
+        {
+            ufw allow 22/tcp    # SSH
+            ufw allow 80/tcp    # HTTP  
+            ufw allow 443/tcp   # HTTPS
+            ufw --force enable
+        } >> "$LOG_FILE" 2>&1
+        
+        print_success "Firewall configured successfully"
+        print_info "Current firewall status:"
+        ufw status verbose
+    fi
+}
 
-# --- Step 14: Automatic Security Updates ---
-if confirm_install "Automatic Security Updates (unattended-upgrades)"; then
-    echo -e "${CYAN}Installing and configuring unattended-upgrades...${RESET}"
-    apt install -y unattended-upgrades
-    dpkg-reconfigure --priority=low unattended-upgrades
-fi
+# Docker installation
+install_docker() {
+    if confirm_install "Docker & Docker Compose" "Container platform for development and deployment"; then
+        ((INSTALLATION_COUNT++))
+        show_progress $INSTALLATION_COUNT 15 "Installing Docker"
+        
+        # Install Docker using official repository for latest version
+        print_info "Adding Docker repository..."
+        {
+            curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+            echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/debian $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+            apt update
+        } >> "$LOG_FILE" 2>&1
+        
+        install_packages docker-ce docker-ce-cli containerd.io docker-compose-plugin
+        
+        if [ -n "$CURRENT_USER" ]; then
+            usermod -aG docker "$CURRENT_USER"
+            print_success "User '$CURRENT_USER' added to docker group"
+            print_warning "User needs to log out and back in for docker group changes to take effect"
+        fi
+    fi
+}
 
-# --- Step 15: Additional Enhancements ---
-if confirm_install "Additional Enhancements (swap file, time sync, fail2ban config)"; then
-    echo -e "${CYAN}Setting up a swap file (2G)...${RESET}"
-    fallocate -l 2G /swapfile
-    chmod 600 /swapfile
-    mkswap /swapfile
-    swapon /swapfile
-    echo '/swapfile none swap sw 0 0' >> /etc/fstab
+# Database installation
+install_databases() {
+    if confirm_install "Database Tools" "SQLite, PostgreSQL, and MariaDB database systems"; then
+        ((INSTALLATION_COUNT++))
+        show_progress $INSTALLATION_COUNT 15 "Installing databases"
+        
+        local packages=(sqlite3 postgresql postgresql-contrib mariadb-server)
+        install_packages "${packages[@]}"
+        
+        print_info "Starting database services..."
+        {
+            systemctl enable postgresql
+            systemctl start postgresql
+            systemctl enable mariadb
+            systemctl start mariadb
+        } >> "$LOG_FILE" 2>&1
+        
+        print_success "Databases installed and started"
+        print_warning "Remember to run 'mysql_secure_installation' for MariaDB security setup"
+    fi
+}
 
-    echo -e "${CYAN}Installing Chrony for time synchronization...${RESET}"
-    apt install -y chrony
-    systemctl enable chrony
-    systemctl start chrony
+# Development tools
+install_development_tools() {
+    if confirm_install "Development Tools" "Compilers and dev tools: gcc, g++, clang, gdb, valgrind, Python3, Node.js"; then
+        ((INSTALLATION_COUNT++))
+        show_progress $INSTALLATION_COUNT 15 "Installing development tools"
+        
+        local packages=(gcc g++ clang gdb valgrind python3 python3-pip python3-venv nodejs npm)
+        install_packages "${packages[@]}"
+        
+        # Set up Python alternatives if multiple versions exist
+        if command -v python3 &>/dev/null && ! command -v python &>/dev/null; then
+            update-alternatives --install /usr/bin/python python /usr/bin/python3 1
+        fi
+    fi
+}
 
-    echo -e "${CYAN}Configuring Fail2ban for SSH protection...${RESET}"
-    # A basic Fail2ban configuration for SSH (you can extend this as needed)
-    cat <<EOF > /etc/fail2ban/jail.local
+# Rust installation
+install_rust() {
+    if confirm_install "Rust Programming Language" "Modern systems programming language with cargo package manager"; then
+        ((INSTALLATION_COUNT++))
+        show_progress $INSTALLATION_COUNT 15 "Installing Rust"
+        
+        print_info "Installing Rust via rustup..."
+        if [ -n "$CURRENT_USER" ]; then
+            sudo -u "$CURRENT_USER" bash -c 'curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y'
+            print_success "Rust installed for user $CURRENT_USER"
+        else
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+            print_success "Rust installed system-wide"
+        fi
+    fi
+}
+
+# Shell and terminal enhancements
+install_shell_enhancements() {
+    if confirm_install "Zsh & Oh My Zsh" "Enhanced shell with Oh My Zsh framework and powerline fonts"; then
+        ((INSTALLATION_COUNT++))
+        show_progress $INSTALLATION_COUNT 15 "Installing Zsh and Oh My Zsh"
+        
+        install_packages zsh fonts-powerline
+        
+        if [ -n "$CURRENT_USER" ]; then
+            print_info "Installing Oh My Zsh for user $CURRENT_USER..."
+            sudo -u "$CURRENT_USER" bash -c 'sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended'
+            chsh -s "$(which zsh)" "$CURRENT_USER"
+            print_success "Zsh set as default shell for $CURRENT_USER"
+        else
+            print_warning "No user specified. Skipping Oh My Zsh installation."
+        fi
+    fi
+}
+
+# Additional CLI tools
+install_cli_tools() {
+    if confirm_install "Useful CLI Tools" "Enhanced productivity tools: tmux, bat, fzf, ripgrep, jq, tree, vim"; then
+        ((INSTALLATION_COUNT++))
+        show_progress $INSTALLATION_COUNT 15 "Installing CLI tools"
+        
+        local packages=(tmux bat fzf ripgrep jq tree vim)
+        install_packages "${packages[@]}"
+    fi
+}
+
+# Web server installation
+install_web_server() {
+    if confirm_install "Nginx Web Server" "High-performance web server and reverse proxy"; then
+        ((INSTALLATION_COUNT++))
+        show_progress $INSTALLATION_COUNT 15 "Installing Nginx"
+        
+        install_packages nginx
+        
+        print_info "Configuring Nginx..."
+        {
+            systemctl enable nginx
+            systemctl start nginx
+        } >> "$LOG_FILE" 2>&1
+        
+        print_success "Nginx installed and started"
+        print_info "Default site available at http://localhost"
+    fi
+}
+
+# Automatic security updates
+setup_auto_updates() {
+    if confirm_install "Automatic Security Updates" "Configure unattended-upgrades for automatic security patches"; then
+        ((INSTALLATION_COUNT++))
+        show_progress $INSTALLATION_COUNT 15 "Setting up automatic updates"
+        
+        install_packages unattended-upgrades
+        
+        print_info "Configuring automatic updates..."
+        echo 'Unattended-Upgrade::Automatic-Reboot "false";' > /etc/apt/apt.conf.d/52-auto-reboot
+        dpkg-reconfigure -plow unattended-upgrades
+        print_success "Automatic security updates configured"
+    fi
+}
+
+# System enhancements
+setup_system_enhancements() {
+    if confirm_install "System Enhancements" "Swap file, time synchronization, and fail2ban configuration"; then
+        ((INSTALLATION_COUNT++))
+        show_progress $INSTALLATION_COUNT 15 "Applying system enhancements"
+        
+        # Setup swap file with user input
+        local swap_size="2G"
+        if [ ! -f /swapfile ]; then
+            read -p "Enter swap file size (default: 2G): " user_swap
+            swap_size="${user_swap:-2G}"
+            
+            print_info "Creating ${swap_size} swap file..."
+            {
+                fallocate -l "$swap_size" /swapfile
+                chmod 600 /swapfile
+                mkswap /swapfile
+                swapon /swapfile
+                echo '/swapfile none swap sw 0 0' >> /etc/fstab
+            } >> "$LOG_FILE" 2>&1
+            print_success "Swap file created: $swap_size"
+        else
+            print_info "Swap file already exists"
+        fi
+        
+        # Time synchronization
+        install_packages chrony
+        {
+            systemctl enable chrony
+            systemctl start chrony
+        } >> "$LOG_FILE" 2>&1
+        print_success "Time synchronization configured"
+        
+        # Enhanced Fail2ban configuration
+        print_info "Configuring Fail2ban..."
+        cat > /etc/fail2ban/jail.local << 'EOF'
+[DEFAULT]
+bantime = 3600
+findtime = 600
+maxretry = 3
+backend = systemd
+
 [sshd]
 enabled = true
-port    = ssh
-filter  = sshd
+port = ssh
+filter = sshd
 logpath = /var/log/auth.log
 maxretry = 3
+bantime = 7200
 EOF
-    systemctl restart fail2ban
-fi
+        
+        {
+            systemctl enable fail2ban
+            systemctl restart fail2ban
+        } >> "$LOG_FILE" 2>&1
+        print_success "Fail2ban configured for SSH protection"
+    fi
+}
 
-echo -e "${GREEN}Setup complete! Please reboot your system for all changes to take effect.${RESET}"
+# Generate installation summary
+generate_summary() {
+    local end_time=$(date +%s)
+    local duration=$((end_time - START_TIME))
+    local hours=$((duration / 3600))
+    local minutes=$(((duration % 3600) / 60))
+    local seconds=$((duration % 60))
+    
+    print_header "Installation Summary"
+    
+    echo -e "${BOLD}Installation completed in: ${hours}h ${minutes}m ${seconds}s${RESET}"
+    echo -e "${BOLD}Log file: ${LOG_FILE}${RESET}"
+    
+    if [ ${#FAILED_INSTALLATIONS[@]} -eq 0 ]; then
+        print_success "All selected components installed successfully!"
+    else
+        print_warning "Some installations failed:"
+        for failed in "${FAILED_INSTALLATIONS[@]}"; do
+            echo -e "  ${RED}• $failed${RESET}"
+        done
+        print_info "Check the log file for detailed error information"
+    fi
+    
+    # Post-installation recommendations
+    echo -e "\n${BOLD}${BLUE}Post-Installation Recommendations:${RESET}"
+    
+    if [ -n "$CURRENT_USER" ]; then
+        echo -e "${CYAN}• Log out and back in as '$CURRENT_USER' to apply group changes${RESET}"
+        echo -e "${CYAN}• Set up SSH keys: ssh-keygen -t ed25519${RESET}"
+    fi
+    
+    if command -v docker &>/dev/null; then
+        echo -e "${CYAN}• Test Docker: docker run hello-world${RESET}"
+    fi
+    
+    if command -v mariadb &>/dev/null; then
+        echo -e "${CYAN}• Secure MariaDB: mysql_secure_installation${RESET}"
+    fi
+    
+    echo -e "${CYAN}• Update your system regularly: apt update && apt upgrade${RESET}"
+    echo -e "${CYAN}• Configure your development environment and tools${RESET}"
+    
+    print_info "System reboot recommended to ensure all changes take effect"
+    
+    # Ask about reboot
+    echo
+    if confirm_install "Reboot System" "Reboot now to apply all changes (recommended)"; then
+        print_info "Rebooting system in 10 seconds... (Ctrl+C to cancel)"
+        sleep 10
+        reboot
+    else
+        print_warning "Please reboot your system when convenient"
+    fi
+}
+
+#==============================================================================
+# Main Execution
+#==============================================================================
+
+main() {
+    # Initialize
+    initialize
+    
+    # User setup
+    setup_user
+    
+    # System update
+    update_system
+    
+    # Install components
+    install_essential_tools
+    install_networking_security
+    setup_ssh_server
+    setup_firewall
+    install_docker
+    install_databases
+    install_development_tools
+    install_rust
+    install_shell_enhancements
+    install_cli_tools
+    install_web_server
+    setup_auto_updates
+    setup_system_enhancements
+    
+    # Final summary
+    generate_summary
+}
+
+# Trap to handle script interruption
+trap 'print_error "Script interrupted"; exit 1' INT TERM
+
+# Run main function
+main "$@"

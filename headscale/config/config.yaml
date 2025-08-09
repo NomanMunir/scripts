@@ -1,0 +1,56 @@
+server_url: http://localhost:8080
+listen_addr: 0.0.0.0:8080
+metrics_listen_addr: 0.0.0.0:9090
+grpc_listen_addr: 0.0.0.0:50443
+
+noise:
+  private_key_path: /var/lib/headscale/noise_private.key
+
+# Modern database configuration format
+database:
+  type: postgres
+  postgres:
+    host: postgres
+    port: 5432
+    name: headscale
+    user: headscale
+    pass: headscale_password
+    ssl: false
+    max_open_conns: 10
+    max_idle_conns: 10
+    conn_max_idle_time_secs: 3600
+
+# IP prefixes for client allocation
+prefixes:
+  v4: 100.64.0.0/10
+  v6: fd7a:115c:a1e0::/48
+
+# DERP configuration
+derp:
+  urls:
+    - https://controlplane.tailscale.com/derpmap/default
+
+# Disable update checks
+disable_check_updates: false
+
+# Ephemeral node timeout
+ephemeral_node_inactivity_timeout: 30m
+
+# Logging configuration
+log:
+  level: info
+  format: text
+
+# DNS configuration
+dns:
+  magic_dns: true
+  base_domain: example.com
+  nameservers:
+    global:
+      - 1.1.1.1
+      - 1.0.0.1
+
+# CLI socket path
+unix_socket: /var/run/headscale/headscale.sock
+unix_socket_permission: "0770"
+

@@ -139,6 +139,21 @@ create-user: ## Create a new user (usage: make create-user USER=username)
 	@echo "👤 Creating user: $(USER)"
 	@docker exec -it headscale headscale users create $(USER)
 	@echo "✅ User '$(USER)' created successfully!"
+	@echo ""
+	@echo "📱 Next Steps:"
+	@echo "=============="
+	@echo "1️⃣  Generate a pre-auth key for this user:"
+	@echo "   make preauthkey USERID=1"
+	@echo ""
+	@echo "2️⃣  On your client device, install Tailscale and run:"
+	@echo "   sudo tailscale up --login-server http://maximum-logically-sunbird.ngrok-free.app --authkey YOUR_AUTHKEY"
+	@echo ""
+	@echo "   📝 Replace YOUR_AUTHKEY with the key generated in step 1"
+	@echo "   📝 Keep the --login-server URL exactly as shown above"
+	@echo ""
+	@echo "3️⃣  Verify the connection:"
+	@echo "   make list-nodes"
+	@echo ""
 
 delete-user: ## Delete a user (usage: make delete-user USER=username)
 	@if [ -z "$(USER)" ]; then \
@@ -149,7 +164,7 @@ delete-user: ## Delete a user (usage: make delete-user USER=username)
 	@echo "🗑️  Deleting user: $(USER)"
 	@echo "⚠️  This will also delete all nodes for this user!"
 	@read -p "Are you sure? (y/N): " confirm && [ "$$confirm" = "y" ] || exit 1
-	@docker exec -it headscale headscale users destroy --name $(USER)
+	@docker exec -it headscale headscale users destroy --name $(USER) --force
 	@echo "✅ User '$(USER)' deleted!"
 
 # =============================================================================
@@ -168,6 +183,18 @@ preauthkey: ## Generate a pre-auth key (usage: make preauthkey [USERID=1])
 	else \
 		echo "🔑 Generating 24h reusable pre-auth key for User ID: $(USERID)"; \
 		docker exec -it headscale headscale preauthkeys create --user $(USERID) --expiration 24h --reusable; \
+		echo ""; \
+		echo "📱 Connection Instructions:"; \
+		echo "==========================="; \
+		echo "Copy the authkey from above and run this command on your client device:"; \
+		echo ""; \
+		echo "   sudo tailscale up --login-server http://maximum-logically-sunbird.ngrok-free.app --authkey YOUR_AUTHKEY"; \
+		echo ""; \
+		echo "   📝 Replace YOUR_AUTHKEY with the key generated above"; \
+		echo "   📝 Keep the --login-server URL exactly as shown"; \
+		echo ""; \
+		echo "✅ After connecting, verify with: make list-nodes"; \
+		echo ""; \
 	fi
 
 list-preauthkeys: ## List pre-auth keys for a user (usage: make list-preauthkeys USERID=1)
@@ -211,7 +238,7 @@ delete-node: ## Delete a node (usage: make delete-node NODE=node_id)
 		exit 1; \
 	fi
 	@echo "🗑️  Deleting node: $(NODE)"
-	@docker exec -it headscale headscale nodes delete $(NODE)
+	@docker exec -it headscale headscale nodes delete --identifier $(NODE) --force
 
 # =============================================================================
 # ROUTES MANAGEMENT
@@ -241,12 +268,12 @@ logs-follow: ## Follow logs in real-time
 logs-headscale: ## Show logs from headscale service only
 	@echo "📋 Headscale Logs"
 	@echo "================="
-	docker-compose logs headscale --tail=50
+	docker-compose logs --tail=50 headscale
 
 logs-db: ## Show logs from database service only
 	@echo "📋 Database Logs"
 	@echo "================"
-	docker-compose logs postgres --tail=50
+	docker-compose logs --tail=50 postgres
 
 dev-logs: ## Show detailed logs with debug info
 	@echo "🐛 Debug Logs"

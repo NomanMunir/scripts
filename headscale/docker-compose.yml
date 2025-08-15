@@ -36,6 +36,20 @@ services:
     networks:
       - headscale-net
 
+  headscale-ui:
+    image: ghcr.io/gurucomputing/headscale-ui:latest
+    container_name: headscale-ui
+    depends_on:
+      - headscale
+    ports:
+      - "5353:8080"
+    environment:
+      - HEADSCALE_URL=http://headscale:8080
+      - SCRIPT_NAME=/admin
+    restart: unless-stopped
+    networks:
+      - headscale-net
+
 networks:
   headscale-net:
     driver: bridge

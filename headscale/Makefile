@@ -1,7 +1,7 @@
 # =============================================================================
 # Headscale Docker Management Makefile
 # =============================================================================
-# Author: GitHub Copilot
+# Author: Nauman Munir
 # Description: Simplifies common Headscale operations with organized sections
 
 .PHONY: help up down restart status logs logs-follow clean backup restore shell exec users create-user list-users delete-user preauthkey routes health
@@ -38,6 +38,7 @@ help: ## Show this help message
 	@echo "💻 NODE MANAGEMENT:"
 	@echo "  list-nodes                 # List all nodes"
 	@echo "  node-info NODE=id          # Show detailed node info"
+	@echo "  rename-node NODE=id NAME=new_name # Rename a node"
 	@echo "  delete-node NODE=id        # Delete a node"
 	@echo ""
 	@echo "📋 MONITORING & LOGS:"
@@ -50,6 +51,10 @@ help: ## Show this help message
 	@echo "  backup                     # Create backup"
 	@echo "  shell                      # Open shell in container"
 	@echo "  clean                      # Remove all data (DESTRUCTIVE!)"
+	@echo ""
+	@echo "🌐 WEB INTERFACE:"
+	@echo "  web-ui                     # Open Headscale Web UI"
+	@echo "  web-status                 # Check Web UI status"
 	@echo ""
 	@echo "💡 EXAMPLES:"
 	@echo "  make create-user USER=john"
@@ -240,6 +245,17 @@ delete-node: ## Delete a node (usage: make delete-node NODE=node_id)
 	@echo "🗑️  Deleting node: $(NODE)"
 	@docker exec -it headscale headscale nodes delete --identifier $(NODE) --force
 
+rename-node: ## Rename a node (usage: make rename-node NODE=node_id NAME=new_name)
+	@if [ -z "$(NODE)" ] || [ -z "$(NAME)" ]; then \
+		echo "❌ Error: Both NODE and NAME parameters are required"; \
+		echo "Usage: make rename-node NODE=1 NAME=MyPhone"; \
+		exit 1; \
+	fi
+	@echo "🏷️  Renaming node $(NODE) to: $(NAME)"
+	@docker exec -it headscale headscale nodes rename $(NODE) $(NAME)
+	@echo "✅ Node renamed successfully!"mplifies common Headscale operations with organized sections
+
+
 # =============================================================================
 # ROUTES MANAGEMENT
 # =============================================================================
@@ -363,3 +379,29 @@ network-info: ## Show docker network information
 	@docker network ls | grep headscale
 	@echo ""
 	@docker network inspect headscale_headscale-net
+
+# =============================================================================
+# WEB INTERFACE MANAGEMENT
+# =============================================================================
+
+web-ui: ## Open Headscale Web UI in browser
+	@echo "🌐 Opening Headscale Web UI..."
+	@echo "📍 Web UI URL: http://$(shell hostname -I | awk '{print $$1}'):5353"
+	@echo "🔗 Direct link: http://localhost:5353"
+	@echo ""
+	@echo "💡 If the UI doesn't load, try:"
+	@echo "   make web-status"
+	@echo "   make restart"
+
+web-status: ## Check Web UI status
+	@echo "🌐 Web UI Status"
+	@echo "==============="
+	@echo "🔍 Checking Web UI container..."
+	@docker ps | grep headscale-ui || echo "❌ Web UI container not running"
+	@echo ""
+	@echo "🔍 Checking Web UI accessibility..."
+	@curl -s -o /dev/null -w "   Status: %{http_code}\n" http://localhost:5353 2>/dev/null || echo "   Status: Not responding"
+	@echo ""
+	@echo "📍 Web UI should be accessible at:"
+	@echo "   http://localhost:5353"
+	@echo "   http://$(shell hostname -I | awk '{print $$1}'):5353"
